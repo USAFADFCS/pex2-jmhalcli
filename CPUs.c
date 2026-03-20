@@ -192,11 +192,39 @@ void* RRcpu(void* param) {
     int threadNum = ((CpuParams*) param)->threadNumber;
     SharedVars* svars = ((CpuParams*) param)->svars;
 
-    // Process* p = NULL;  // TODO: uncomment when you implement this function
+    Process* p = NULL;  // TODO: uncomment when you implement this function
 
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
 
+        if (p == NULL) {
+            pthread_mutex_lock(&(svars->readyQLock));
+            p = qRemove(&(svars->readyQ), 0);
+            if (p->burstRemaining > 0){
+                p->requeued = true;
+                qInsert(&(svars->readyQ), p);
+                p = NULL;
+            }
+            if (p == NULL) {
+                printf("No process to schedule\n");
+            } else {
+                printf("Scheduling PID %d\n", p->PID);
+            }
+            p = NULL;
+            pthread_mutex_unlock(&(svars->readyQLock));
+        }
+
+        if (p != NULL) {
+            p->burstRemaining = p->burstRemaining-svars->quantum;
+
+            if (p->burstRemaining == 0) {
+                pthread_mutex_lock(&(svars->finishedQLock));
+                qInsert(&(svars->finishedQ), p);
+                pthread_mutex_unlock(&(svars->finishedQLock));
+
+                p = NULL;
+            }
+        }
         sem_post(svars->mainSem);
     }
 }
